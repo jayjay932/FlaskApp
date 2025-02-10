@@ -1,5 +1,7 @@
 name: CI for FlaskApp
 
+# Déclenchement du workflow : 
+# Il sera exécuté lors de chaque push ou pull request sur la branche "main".
 on:
   push:
     branches: [main]
@@ -7,22 +9,78 @@ on:
     branches: [main]
 
 jobs:
+  # Job de construction et tests de l'application
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest  # Utilisation de l'environnement Ubuntu le plus récent
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+    - name: Checkout code  # Étape pour récupérer le code depuis le dépôt
+      uses: actions/checkout@v3  # Action officielle pour cloner le dépôt
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
+    - name: Set up Python  # Installation de la version Python 3.9
+      uses: actions/setup-python@v4  # Action officielle pour configurer Python
       with:
-        python-version: '3.9'
+        python-version: '3.9'  # Version de Python à utiliser
 
-    - name: Install dependencies
+    - name: Install dependencies  # Installation des dépendances de l'application
       run: |
-        pip install -r requirements.txt
+        pip install -r requirements.txt  # Installation des dépendances depuis le fichier requirements.txt
 
-    - name: Run tests
+    - name: Run tests  # Exécution des tests unitaires pour valider le code
       run: |
-        pytest
+        pytest  # Utilisation de pytest pour lancer les tests unitaires
+
+  # Job pour la construction et le push de l'image Docker
+  docker-build:
+    runs-on: ubuntu-latest  # Exécution sur un environnement Ubuntu
+    needs: build  # Ce job dépend de l'achèvement du job "build"
+
+    steps:
+    - name: Checkout code  # Étape pour récupérer le code depuis le dépôt
+      uses: actions/checkout@v3  # Cloner à nouveau le dépôt pour les étapes suivantes
+
+    - name: Set up Docker Buildx  # Préparation pour construire l'image Docker avec Buildx (meilleure compatibilité pour la construction multi-plateforme)
+      uses: docker/setup-buildx-action@v2  # Action pour configurer Docker Buildx
+
+    - name: Build Docker image  # Étape pour construire l'image Docker
+      run: |
+        docker build -t my-flask-app:latest .  # Construction de l'image Docker avec le tag "latest" pour le dépôt actuel
+
+    - name: Log in to Docker Hub  # Authentification auprès de Docker Hub pour pousser l'image
+      uses: docker/login-action@v2  # Action officielle pour l'authentification Docker
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}  # Nom d'utilisateur Docker Hub depuis les secrets GitHub
+        password: ${{ secrets.DOCKER_PASSWORD }}  # Mot de passe Docker Hub depuis les secrets GitHub
+
+    - name: Push Docker image to Docker Hub  # Poussée de l'image Docker vers Docker Hub
+      run: |
+        docker push my-flask-app:latest  # Pousser l'image vers Docker Hub
+
+    - name: Log in to Private Registry  # Authentification à un registre Docker privé
+      uses: docker/login-action@v2  # Utilisation de la même action pour s'authentifier dans un autre registre
+      with:
+        username: ${{ secrets.PRIVATE_REGISTRY_USERNAME }}  # Nom d'utilisateur du registre privé depuis les secrets GitHub
+        password: ${{ secrets.PRIVATE_REGISTRY_PASSWORD }}  # Mot de passe du registre privé depuis les secrets GitHub
+
+    - name: Push Docker image to Private Registry  # Poussée de l'image Docker vers un registre privé
+      run: |
+        docker push private-registry/my-flask-app:latest  # Pousser l'image vers le registre privé
+
+  # Job de notification par email en cas d'échec
+  notify:
+    runs-on: ubuntu-latest  # Utilisation de l'environnement Ubuntu pour l'envoi d'email
+    needs: build  # Ce job dépend du succès du job "build"
+    if: failure()  # Ce job ne s'exécute que si le job "build" échoue
+
+    steps:
+    - name: Send failure email notification  # Étape d'envoi d'email de notification en cas d'échec
+      uses: dawidd6/action-send-mail@v3  # Action GitHub pour envoyer un email
+      with:
+        from: 'your-email@example.com'  # Adresse email de l'expéditeur
+        to: 'recipient@example.com'  # Adresse email du destinataire
+        subject: 'CI/CD Pipeline Failure'  # Sujet de l'email
+        body: 'The tests failed in the CI/CD pipeline.'  # Corps de l'email indiquant l'échec des tests
+        smtp-server: 'smtp.example.com'  # Serveur SMTP pour l'envoi de l'email
+        smtp-port: '587'  # Port du serveur SMTP
+        smtp-username: ${{ secrets.SMTP_USERNAME }}  # Nom d'utilisateur SMTP depuis les secrets GitHub
+        smtp-password: ${{ secrets.SMTP_PASSWORD }}  # Mot de passe SMTP depuis les secrets GitHub
